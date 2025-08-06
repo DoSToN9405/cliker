@@ -176,9 +176,9 @@ function showRewardedPopup() {
 
 // --- Withdrawal Logic ---
 function openWithdrawModal() {
-    if (balance < 5) {
+    if (balance < 0.20) {
         Telegram.WebApp.HapticFeedback.notificationOccurred('error');
-        return alert("Minimum withdrawal amount is $5.00. Keep earning!");
+        return alert("Minimum withdrawal amount is $0.20. Keep earning!");
     }
     document.getElementById('withdraw-modal').classList.add('active');
 }
@@ -262,9 +262,9 @@ function saveAdminData() {
 
 function renderAdminPanel() {
     // Update stats
-    document.getElementById('total-users').textContent = '156'; // Mock data
+    document.getElementById('total-users').textContent = '1'; // Mock data
     document.getElementById('pending-withdrawals').textContent = withdrawalRequests.filter(req => req.status === 'pending').length;
-    document.getElementById('total-paid').textContent = '$1,234.56'; // Mock data
+    document.getElementById('total-paid').textContent = '$234.'; // Mock data
     
     // Render withdrawal requests
     renderWithdrawalRequests();
@@ -367,3 +367,4 @@ requestWithdraw = function() {
     }
     originalRequestWithdraw();
 };
+
