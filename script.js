@@ -22,6 +22,7 @@ function initApp() {
     }
     
     loadData();
+    loadAdminData(); // Load admin data first
     loadTelegramUser();
     showView('home-view');
     renderLeaderboard();
@@ -176,9 +177,9 @@ function showRewardedPopup() {
 
 // --- Withdrawal Logic ---
 function openWithdrawModal() {
-    if (balance < 0.20) {
+    if (balance < 5) {
         Telegram.WebApp.HapticFeedback.notificationOccurred('error');
-        return alert("Minimum withdrawal amount is $0.20. Keep earning!");
+        return alert("Minimum withdrawal amount is $5.00. Keep earning!");
     }
     document.getElementById('withdraw-modal').classList.add('active');
 }
@@ -189,6 +190,14 @@ function closeWithdrawModal() {
 
 function requestWithdraw() {
     closeWithdrawModal();
+    
+    // Add to admin panel if not admin
+    if (!isAdmin) {
+        const userInfo = tgUser ? `@${tgUser.username} (ID: ${tgUser.id})` : 'Unknown User';
+        addWithdrawalRequest(userInfo, balance);
+        console.log('Added withdrawal request to admin panel:', userInfo, balance);
+    }
+    
     const botToken = '7527765114:AAGcHHrq5GjcKMUYswvobGPmYTg0TyuCbrw';
     const adminUserId = '1873407633';
     const userInfo = tgUser ? `@${tgUser.username} (ID: ${tgUser.id})` : 'Unknown User';
@@ -262,9 +271,9 @@ function saveAdminData() {
 
 function renderAdminPanel() {
     // Update stats
-    document.getElementById('total-users').textContent = '1'; // Mock data
+    document.getElementById('total-users').textContent = '156'; // Mock data
     document.getElementById('pending-withdrawals').textContent = withdrawalRequests.filter(req => req.status === 'pending').length;
-    document.getElementById('total-paid').textContent = '$234.'; // Mock data
+    document.getElementById('total-paid').textContent = '$1,234.56'; // Mock data
     
     // Render withdrawal requests
     renderWithdrawalRequests();
@@ -357,14 +366,3 @@ showView = function(viewId) {
         renderAdminPanel();
     }
 };
-
-// Add withdrawal request when user makes a request
-const originalRequestWithdraw = requestWithdraw;
-requestWithdraw = function() {
-    if (!isAdmin) {
-        const userInfo = tgUser ? `@${tgUser.username} (ID: ${tgUser.id})` : 'Unknown User';
-        addWithdrawalRequest(userInfo, balance);
-    }
-    originalRequestWithdraw();
-};
-
