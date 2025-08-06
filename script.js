@@ -100,6 +100,7 @@ function loadTelegramUser() {
         if (tgUser.id.toString() === adminUserId) {
             isAdmin = true;
             showAdminButton();
+            console.log('Admin access granted - User ID:', tgUser.id);
         }
     }
 }
@@ -177,9 +178,9 @@ function showRewardedPopup() {
 
 // --- Withdrawal Logic ---
 function openWithdrawModal() {
-    if (balance < 0.30) {
+    if (balance < 5) {
         Telegram.WebApp.HapticFeedback.notificationOccurred('error');
-        return alert("Minimum withdrawal amount is $0.30. Keep earning!");
+        return alert("Minimum withdrawal amount is $5.00. Keep earning!");
     }
     document.getElementById('withdraw-modal').classList.add('active');
 }
@@ -251,14 +252,37 @@ function showAdminButton() {
 }
 
 function loadAdminData() {
+    console.log('=== Loading Admin Data ===');
     const savedAdminData = localStorage.getItem('adminData');
     if (savedAdminData) {
-        const data = JSON.parse(savedAdminData);
-        withdrawalRequests = data.withdrawalRequests || [];
+        try {
+            const data = JSON.parse(savedAdminData);
+            withdrawalRequests = data.withdrawalRequests || [];
+            console.log('Loaded withdrawal requests:', withdrawalRequests);
+        } catch (error) {
+            console.error('Error parsing admin data:', error);
+            withdrawalRequests = [];
+        }
+    } else {
+        console.log('No admin data found in localStorage');
+        // Add some test data for debugging
+        withdrawalRequests = [
+            {
+                id: Date.now() - 1000,
+                username: 'TestUser',
+                userId: '123456789',
+                amount: 5.00,
+                timestamp: new Date().toISOString(),
+                status: 'pending'
+            }
+        ];
+        console.log('Added test data:', withdrawalRequests);
     }
     
+    console.log('Current withdrawal requests count:', withdrawalRequests.length);
+    
     // Update admin view when it's shown
-    if (document.getElementById('admin-view').classList.contains('active')) {
+    if (document.getElementById('admin-view') && document.getElementById('admin-view').classList.contains('active')) {
         renderAdminPanel();
     }
 }
@@ -315,21 +339,76 @@ function renderWithdrawalRequests() {
 }
 
 function addWithdrawalRequest(userInfo, amount) {
+    console.log('=== Adding withdrawal request ===');
+    console.log('User Info:', userInfo);
+    console.log('Amount:', amount);
+    
+    let username, userId;
+    
+    try {
+        if (userInfo.includes('@')) {
+            username = userInfo.split(' ')[0].replace('@', ''); // Remove @
+        } else {
+            username = userInfo.split(' ')[0] || 'Unknown';
+        }
+        
+        if (userInfo.includes('ID: ')) {
+            userId = userInfo.split('ID: ')[1].replace(')', '') || 'Unknown';
+        } else {
+            userId = 'Unknown';
+        }
+    } catch (error) {
+        console.error('Error parsing user info:', error);
+        username = 'Unknown User';
+        userId = 'Unknown';
+    }
+    
     const request = {
         id: Date.now(),
-        username: userInfo.split(' ')[0], // Extract username
-        userId: userInfo.split('ID: ')[1].replace(')', ''), // Extract ID
-        amount: amount,
+        username: username,
+        userId: userId,
+        amount: parseFloat(amount) || 0,
         timestamp: new Date().toISOString(),
         status: 'pending'
     };
     
-    withdrawalRequests.unshift(request);
-    saveAdminData();
+    console.log('Created request object:', request);
+    
+    // Load existing data first
+    const savedAdminData = localStorage.getItem('adminData');
+    let existingRequests = [];
+    if (savedAdminData) {
+        try {
+            const data = JSON.parse(savedAdminData);
+            existingRequests = data.withdrawalRequests || [];
+        } catch (error) {
+            console.error('Error parsing admin data:', error);
+        }
+    }
+    
+    // Add new request
+    existingRequests.unshift(request);
+    withdrawalRequests = existingRequests;
+    
+    console.log('All withdrawal requests:', withdrawalRequests);
+    
+    // Save to localStorage
+    try {
+        localStorage.setItem('adminData', JSON.stringify({
+            withdrawalRequests: withdrawalRequests,
+            lastUpdated: new Date().toISOString()
+        }));
+        console.log('Saved to localStorage successfully');
+    } catch (error) {
+        console.error('Error saving to localStorage:', error);
+    }
     
     // Update admin panel if it's currently visible
-    if (document.getElementById('admin-view').classList.contains('active')) {
+    if (document.getElementById('admin-view') && document.getElementById('admin-view').classList.contains('active')) {
+        console.log('Admin view is active, updating panel');
         renderAdminPanel();
+    } else {
+        console.log('Admin view is not active');
     }
 }
 
@@ -366,4 +445,3 @@ showView = function(viewId) {
         renderAdminPanel();
     }
 };
-
