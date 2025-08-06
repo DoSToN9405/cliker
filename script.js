@@ -66,6 +66,27 @@ function showView(viewId) {
 
 // --- Data Persistence ---
 function loadData() {
+    if (tgUser && tgUser.id) {
+        // Load from server
+        fetch(`/api/user/${tgUser.id}`)
+            .then(response => response.json())
+            .then(data => {
+                points = data.points || 0;
+                balance = data.balance || 0.00;
+                historyLog = data.historyLog || [];
+                updateDisplay();
+            })
+            .catch(error => {
+                console.error('Error loading user data:', error);
+                // Fallback to localStorage
+                loadLocalData();
+            });
+    } else {
+        loadLocalData();
+    }
+}
+
+function loadLocalData() {
     const savedData = localStorage.getItem('easyEarningBotV2');
     if (savedData) {
         const data = JSON.parse(savedData);
@@ -77,7 +98,25 @@ function loadData() {
 }
 
 function saveData() {
-    localStorage.setItem('easyEarningBotV2', JSON.stringify({ points, balance, historyLog }));
+    if (tgUser && tgUser.id) {
+        // Save to server
+        fetch('/api/user/save', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                userId: tgUser.id,
+                data: { points, balance, historyLog }
+            })
+        }).catch(error => {
+            console.error('Error saving user data:', error);
+            // Fallback to localStorage
+            localStorage.setItem('easyEarningBotV2', JSON.stringify({ points, balance, historyLog }));
+        });
+    } else {
+        localStorage.setItem('easyEarningBotV2', JSON.stringify({ points, balance, historyLog }));
+    }
 }
 
 function updateDisplay() {
@@ -178,9 +217,9 @@ function showRewardedPopup() {
 
 // --- Withdrawal Logic ---
 function openWithdrawModal() {
-    if (balance < 0.20) {
+    if (balance < 5) {
         Telegram.WebApp.HapticFeedback.notificationOccurred('error');
-        return alert("Minimum withdrawal amount is $0.20. Keep earning!");
+        return alert("Minimum withdrawal amount is $5.00. Keep earning!");
     }
     document.getElementById('withdraw-modal').classList.add('active');
 }
@@ -192,25 +231,33 @@ function closeWithdrawModal() {
 function requestWithdraw() {
     closeWithdrawModal();
     
-    // Add to admin panel if not admin
-    if (!isAdmin) {
-        const userInfo = tgUser ? `@${tgUser.username} (ID: ${tgUser.id})` : 'Unknown User';
-        addWithdrawalRequest(userInfo, balance);
-        console.log('Added withdrawal request to admin panel:', userInfo, balance);
-    }
-    
-    const botToken = '7527765114:AAGcHHrq5GjcKMUYswvobGPmYTg0TyuCbrw';
-    const adminUserId = '1873407633';
     const userInfo = tgUser ? `@${tgUser.username} (ID: ${tgUser.id})` : 'Unknown User';
-    const message = `💸 *Withdrawal Request*\n\n👤 *User:* ${userInfo}\n💰 *Amount:* $${balance.toFixed(2)}\n\n_Please process this request._`;
-
-    fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-        method: "POST",
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: adminUserId, text: message, parse_mode: "Markdown" })
-    }).then(res => res.json())
+    
+    // Send to backend server
+    fetch('/api/withdrawal/request', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            userInfo: userInfo,
+            amount: balance,
+            userId: tgUser ? tgUser.id.toString() : 'Unknown'
+        })
+    }).then(response => response.json())
     .then(data => {
-        if (data.ok) {
+        if (data.success) {
+            // Send Telegram notification
+            const botToken = '7527765114:AAGcHHrq5GjcKMUYswvobGPmYTg0TyuCbrw';
+            const adminUserId = '1873407633';
+            const message = `💸 *Withdrawal Request*\n\n👤 *User:* ${userInfo}\n💰 *Amount:* $${balance.toFixed(2)}\n\n_Please check admin panel to process this request._`;
+
+            fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: "POST",
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: adminUserId, text: message, parse_mode: "Markdown" })
+            });
+            
             Telegram.WebApp.HapticFeedback.notificationOccurred('success');
             alert("Your withdrawal request has been sent successfully!");
             addToHistory('withdraw', `Request for $${balance.toFixed(2)}`);
@@ -219,6 +266,7 @@ function requestWithdraw() {
             alert("Failed to send request. Please try again later.");
         }
     }).catch(err => {
+        console.error('Error:', err);
         Telegram.WebApp.HapticFeedback.notificationOccurred('error');
         alert("An error occurred. Check your connection and try again.");
     });
@@ -252,38 +300,43 @@ function showAdminButton() {
 }
 
 function loadAdminData() {
-    console.log('=== Loading Admin Data ===');
+    console.log('=== Loading Admin Data from Server ===');
+    
+    if (!isAdmin) {
+        console.log('Not admin, skipping admin data load');
+        return;
+    }
+    
+    // Load from server
+    Promise.all([
+        fetch('/api/admin/stats').then(res => res.json()),
+        fetch('/api/admin/withdrawals').then(res => res.json())
+    ]).then(([stats, requests]) => {
+        withdrawalRequests = requests || [];
+        console.log('Loaded withdrawal requests from server:', withdrawalRequests);
+        
+        // Update admin view if it's currently visible
+        if (document.getElementById('admin-view') && document.getElementById('admin-view').classList.contains('active')) {
+            renderAdminPanel();
+        }
+    }).catch(error => {
+        console.error('Error loading admin data from server:', error);
+        // Fallback to localStorage
+        loadLocalAdminData();
+    });
+}
+
+function loadLocalAdminData() {
+    console.log('Loading admin data from localStorage as fallback');
     const savedAdminData = localStorage.getItem('adminData');
     if (savedAdminData) {
         try {
             const data = JSON.parse(savedAdminData);
             withdrawalRequests = data.withdrawalRequests || [];
-            console.log('Loaded withdrawal requests:', withdrawalRequests);
         } catch (error) {
             console.error('Error parsing admin data:', error);
             withdrawalRequests = [];
         }
-    } else {
-        console.log('No admin data found in localStorage');
-        // Add some test data for debugging
-        withdrawalRequests = [
-            {
-                id: Date.now() - 1000,
-                username: 'TestUser',
-                userId: '123456789',
-                amount: 5.00,
-                timestamp: new Date().toISOString(),
-                status: 'pending'
-            }
-        ];
-        console.log('Added test data:', withdrawalRequests);
-    }
-    
-    console.log('Current withdrawal requests count:', withdrawalRequests.length);
-    
-    // Update admin view when it's shown
-    if (document.getElementById('admin-view') && document.getElementById('admin-view').classList.contains('active')) {
-        renderAdminPanel();
     }
 }
 
@@ -294,13 +347,35 @@ function saveAdminData() {
 }
 
 function renderAdminPanel() {
-    // Update stats
-    document.getElementById('total-users').textContent = '156'; // Mock data
-    document.getElementById('pending-withdrawals').textContent = withdrawalRequests.filter(req => req.status === 'pending').length;
-    document.getElementById('total-paid').textContent = '$1,234.56'; // Mock data
+    console.log('Rendering admin panel...');
     
-    // Render withdrawal requests
-    renderWithdrawalRequests();
+    // Load fresh data from server
+    fetch('/api/admin/stats')
+        .then(response => response.json())
+        .then(stats => {
+            document.getElementById('total-users').textContent = stats.totalUsers || 0;
+            document.getElementById('pending-withdrawals').textContent = stats.pendingWithdrawals || 0;
+            document.getElementById('total-paid').textContent = `$${(stats.totalPaid || 0).toFixed(2)}`;
+        })
+        .catch(error => {
+            console.error('Error loading stats:', error);
+            // Fallback values
+            document.getElementById('total-users').textContent = '0';
+            document.getElementById('pending-withdrawals').textContent = withdrawalRequests.filter(req => req.status === 'pending').length;
+            document.getElementById('total-paid').textContent = '$0.00';
+        });
+    
+    // Load withdrawal requests
+    fetch('/api/admin/withdrawals')
+        .then(response => response.json())
+        .then(requests => {
+            withdrawalRequests = requests;
+            renderWithdrawalRequests();
+        })
+        .catch(error => {
+            console.error('Error loading withdrawal requests:', error);
+            renderWithdrawalRequests(); // Render with current data
+        });
 }
 
 function renderWithdrawalRequests() {
@@ -338,101 +413,62 @@ function renderWithdrawalRequests() {
     `).join('');
 }
 
+// This function is no longer needed as we use the server API
+// But keeping it for backward compatibility
 function addWithdrawalRequest(userInfo, amount) {
-    console.log('=== Adding withdrawal request ===');
-    console.log('User Info:', userInfo);
-    console.log('Amount:', amount);
-    
-    let username, userId;
-    
-    try {
-        if (userInfo.includes('@')) {
-            username = userInfo.split(' ')[0].replace('@', ''); // Remove @
-        } else {
-            username = userInfo.split(' ')[0] || 'Unknown';
-        }
-        
-        if (userInfo.includes('ID: ')) {
-            userId = userInfo.split('ID: ')[1].replace(')', '') || 'Unknown';
-        } else {
-            userId = 'Unknown';
-        }
-    } catch (error) {
-        console.error('Error parsing user info:', error);
-        username = 'Unknown User';
-        userId = 'Unknown';
-    }
-    
-    const request = {
-        id: Date.now(),
-        username: username,
-        userId: userId,
-        amount: parseFloat(amount) || 0,
-        timestamp: new Date().toISOString(),
-        status: 'pending'
-    };
-    
-    console.log('Created request object:', request);
-    
-    // Load existing data first
-    const savedAdminData = localStorage.getItem('adminData');
-    let existingRequests = [];
-    if (savedAdminData) {
-        try {
-            const data = JSON.parse(savedAdminData);
-            existingRequests = data.withdrawalRequests || [];
-        } catch (error) {
-            console.error('Error parsing admin data:', error);
-        }
-    }
-    
-    // Add new request
-    existingRequests.unshift(request);
-    withdrawalRequests = existingRequests;
-    
-    console.log('All withdrawal requests:', withdrawalRequests);
-    
-    // Save to localStorage
-    try {
-        localStorage.setItem('adminData', JSON.stringify({
-            withdrawalRequests: withdrawalRequests,
-            lastUpdated: new Date().toISOString()
-        }));
-        console.log('Saved to localStorage successfully');
-    } catch (error) {
-        console.error('Error saving to localStorage:', error);
-    }
-    
-    // Update admin panel if it's currently visible
-    if (document.getElementById('admin-view') && document.getElementById('admin-view').classList.contains('active')) {
-        console.log('Admin view is active, updating panel');
-        renderAdminPanel();
-    } else {
-        console.log('Admin view is not active');
-    }
+    console.log('addWithdrawalRequest called, but using server API instead');
+    // This function is now handled by the server API endpoint
 }
 
 function approveWithdrawal(index) {
     if (withdrawalRequests[index]) {
-        withdrawalRequests[index].status = 'approved';
-        saveAdminData();
+        const request = withdrawalRequests[index];
         
-        // Send notification to user (you can implement this)
-        alert(`Withdrawal request for $${withdrawalRequests[index].amount.toFixed(2)} has been approved!`);
-        
-        renderAdminPanel();
+        fetch(`/api/admin/withdrawal/${request.id}/approve`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert(`Withdrawal request for $${request.amount.toFixed(2)} has been approved!`);
+                renderAdminPanel(); // Refresh the panel
+            } else {
+                alert('Failed to approve withdrawal');
+            }
+        })
+        .catch(error => {
+            console.error('Error approving withdrawal:', error);
+            alert('Error approving withdrawal');
+        });
     }
 }
 
 function rejectWithdrawal(index) {
     if (withdrawalRequests[index]) {
-        withdrawalRequests[index].status = 'rejected';
-        saveAdminData();
+        const request = withdrawalRequests[index];
         
-        // Send notification to user (you can implement this)
-        alert(`Withdrawal request for $${withdrawalRequests[index].amount.toFixed(2)} has been rejected!`);
-        
-        renderAdminPanel();
+        fetch(`/api/admin/withdrawal/${request.id}/reject`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert(`Withdrawal request for $${request.amount.toFixed(2)} has been rejected!`);
+                renderAdminPanel(); // Refresh the panel
+            } else {
+                alert('Failed to reject withdrawal');
+            }
+        })
+        .catch(error => {
+            console.error('Error rejecting withdrawal:', error);
+            alert('Error rejecting withdrawal');
+        });
     }
 }
 
@@ -445,4 +481,3 @@ showView = function(viewId) {
         renderAdminPanel();
     }
 };
-

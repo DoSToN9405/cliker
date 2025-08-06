@@ -1,0 +1,5 @@
+database.json
+node_modules
+*.log
+.env
+.env.local
