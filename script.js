@@ -177,9 +177,9 @@ function showRewardedPopup() {
 
 // --- Withdrawal Logic ---
 function openWithdrawModal() {
-    if (balance < 5) {
+    if (balance < 0.30) {
         Telegram.WebApp.HapticFeedback.notificationOccurred('error');
-        return alert("Minimum withdrawal amount is $5.00. Keep earning!");
+        return alert("Minimum withdrawal amount is $0.30. Keep earning!");
     }
     document.getElementById('withdraw-modal').classList.add('active');
 }
@@ -366,3 +366,4 @@ showView = function(viewId) {
         renderAdminPanel();
     }
 };
+
